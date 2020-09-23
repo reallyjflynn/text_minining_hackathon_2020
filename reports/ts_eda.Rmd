@@ -1,0 +1,136 @@
+---
+title: "TS EDA"
+author: "JFlynn"
+date: "9/23/2020"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE, 
+                      message = FALSE)
+
+```
+
+```{r}
+
+library(jsonlite)
+library(tidyverse)
+library(tidymodels)
+library(tidytext)
+
+```
+
+
+```{r}
+
+
+articles <- fromJSON(readLines('data/articles.json'))
+comments_recent <- fromJSON(readLines('data/comments_recent.json'))
+content <- read_csv('data/content.csv')
+
+comments_recent <- fromJSON(readLines('data/comments_recent.json'))
+
+```
+
+
+
+
+```{r}
+
+articles %>% 
+  # sample_n(1) %>% 
+  unnest(cols = c(by, id, score, time, title, type)) %>% 
+  mutate(time = as.POSIXct(time, format = '%Y-%m-%d %H:%M:%S')) %>% 
+  ggplot() + 
+  aes(time, score) + 
+  geom_point()
+
+
+```
+
+
+### Challenge 1 - “Warm up predictions”
+
+The number of new articles to appear between 2020-09-25 00:00 UTC - 2020-09-26 00:00 UTC
+
+```{r}
+
+daily_articles <- articles %>% 
+  unnest(cols = c(by, id, score, time, title, type)) %>% 
+  mutate(time = as.POSIXct(time, format = '%Y-%m-%d %H:%M:%S'), 
+         time = lubridate::round_date(time, "60 minutes") ) %>% 
+  group_by(time) %>% 
+  summarise(articles = n_distinct(id))
+
+```
+
+```{r}
+
+daily_articles %>% 
+  ggplot() + 
+  aes(time, articles, group = 1) + 
+  geom_line()
+
+```
+
+
+```{r}
+
+library(tsibble)
+library(fable)
+library(prophet)
+
+daily_articles_ts <- daily_articles %>% 
+  filter(!is.na(time)) %>% 
+  as_tsibble() %>% 
+  fill_gaps()
+
+
+
+```
+
+```{r}
+
+train <- daily_articles_ts %>% 
+  filter(time < as.Date('2020-09-25')) %>% 
+  select(ds = time, y = articles)
+
+
+truth <- daily_articles_ts %>% 
+  filter(time >= as.Date('2020-09-25')) %>% 
+  filter(time < as.Date('2020-09-26')) %>% 
+  select(ds = time, y = articles)
+
+```
+
+
+```{r}
+
+m <- prophet(train)
+
+future <- make_future_dataframe(m, periods = 48)
+forecast <- predict(m, future)
+
+plot(m, forecast)
+prophet_plot_components(m, forecast)
+
+
+ans <- forecast %>% 
+  filter(ds >= as.Date('2020-09-25'))
+
+```
+
+
+The total number of new comments under stories published between 2020-09-25 00:00 UTC - 2020-09-26 00:00 UTC
+
+The highest number of points obtained by a single article (recorded at 2020-09-26 00:00 UTC) for articles published after 2020-09-25 00:00 UTC
+
+
+
+
+
+
+
